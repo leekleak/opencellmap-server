@@ -1,13 +1,40 @@
-use axum::{routing::get, routing::post, Router};
+mod pow_gate;
+
+use crate::pow_gate::{PowState, pow_gate};
+use axum::{Router, middleware, routing::get, routing::post};
+use moka::sync::Cache;
+use rand::Rng;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU8;
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() {
+    let window_secs = 10;
+
+    let seen: Cache<[u8; 16], ()> = Cache::builder()
+        .time_to_live(Duration::from_secs(window_secs + 5))
+        .max_capacity(1_000_000)
+        .build();
+
+    let mut secret = [0u8; 32];
+    rand::rng().fill_bytes(&mut secret);
+
+    let state = Arc::new(
+        PowState {
+            secret,
+            difficulty: AtomicU8::new(20),
+            seen,
+            window_secs
+        }
+    );
+
     // build our application with a single route
     let app = Router::new()
         .route("/id/challenge/get", get(get_id_challenge))
         .route("/id/challenge/result", get(get_id_challenge_result).post(post_id_challenge_result))
         .route("/id/challenge/verify", get(get_id_challenge_verify))
-        .route("/post", post(post_json));
+        .route("/post", post(post_json).route_layer(middleware::from_fn_with_state(state.clone(), pow_gate)));
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
