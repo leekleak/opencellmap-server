@@ -32,8 +32,6 @@ async fn main() {
     // build our application with a single route
     let app = Router::new()
         .route("/id/challenge/get", get(get_id_challenge))
-        .route("/id/challenge/result", get(get_id_challenge_result).post(post_id_challenge_result))
-        .route("/id/challenge/verify", get(get_id_challenge_verify))
         .route("/post", post(post_json).route_layer(middleware::from_fn_with_state(state.clone(), pow_gate)));
 
     // run our app with hyper, listening globally on port 3000
@@ -42,18 +40,6 @@ async fn main() {
 }
 
 async fn get_id_challenge() -> String {
-    String::from("Hello, World!")
-}
-
-async fn get_id_challenge_result() -> String {
-    String::from("Hello, World!")
-}
-
-async fn post_id_challenge_result() -> String {
-    String::from("Hello, World!")
-}
-
-async fn get_id_challenge_verify() -> String {
     String::from("Hello, World!")
 }
 

@@ -23,6 +23,7 @@ fn leading_zero_bits(hash: &[u8; 32]) -> u32 {
             bits += 8;
         } else {
             bits += byte.leading_zeros();
+            break;
         }
     }
     bits
@@ -61,7 +62,7 @@ pub async fn pow_gate(
     m.verify_slice(&mac).map_err(|_| StatusCode::FORBIDDEN)?;
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    if (now - timestamp) > st.window_secs || difficulty < st.difficulty.load(Ordering::Relaxed) {
+    if now.saturating_sub(timestamp) > st.window_secs || difficulty < st.difficulty.load(Ordering::Relaxed) {
         return Err(StatusCode::FORBIDDEN);
     }
 
