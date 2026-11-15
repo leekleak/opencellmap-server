@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{Request, Response, StatusCode};
+use axum::http::{header, HeaderMap, Request, Response, StatusCode};
 use axum::middleware::Next;
 use hmac::{Hmac, KeyInit, Mac};
 use moka::sync::Cache;
@@ -8,6 +8,7 @@ use sha2::Sha256;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::{Arc, atomic::AtomicU8};
+use rand::{rng, Rng};
 
 pub struct PowState {
     pub secret: [u8; 32],
@@ -37,8 +38,17 @@ fn get_hash(nonce: &[u8; 16], timestamp: u64, counter: u64) -> [u8; 32] {
     *hash.finalize().as_bytes()
 }
 
-//X-Challenge: timestamp.nonce.difficulty.mac.counter
-pub async fn pow_gate(
+fn create_mac(secret: [u8; 32], timestamp: u64, nonce: &[u8; 16], difficulty: u8) -> Hmac<Sha256> {
+    let mut m: Hmac<Sha256> = Hmac::new_from_slice(&secret).unwrap();
+    m.update(&timestamp.to_be_bytes());
+    m.update(nonce);
+    m.update(&[difficulty]);
+    m
+}
+
+// X-Challenge: timestamp.nonce.difficulty.mac.counter
+// (client appends counter)
+pub async fn check_challenge(
     State(st): State<Arc<PowState>>,
     req: Request<Body>,
     next: Next
@@ -55,14 +65,11 @@ pub async fn pow_gate(
     let mac = hex::decode(parts[3]).map_err(|_| StatusCode::BAD_REQUEST)?;
     let counter: u64 = parts[4].parse().map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let mut m: Hmac<Sha256> = Hmac::new_from_slice(&st.secret).unwrap();
-    m.update(&timestamp.to_be_bytes());
-    m.update(&nonce);
-    m.update(&[difficulty]);
+    let m = create_mac(st.secret, timestamp, &nonce, difficulty);
     m.verify_slice(&mac).map_err(|_| StatusCode::FORBIDDEN)?;
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    if now.saturating_sub(timestamp) > st.window_secs || difficulty < st.difficulty.load(Ordering::Relaxed) {
+    if now.abs_diff(timestamp) > st.window_secs || difficulty < st.difficulty.load(Ordering::Relaxed) {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -75,4 +82,20 @@ pub async fn pow_gate(
     }
 
     Ok(next.run(req).await)
+}
+
+// X-Challenge: timestamp.nonce.difficulty.mac
+pub async fn mint_challenge(State(st): State<Arc<PowState>>) -> HeaderMap {
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let mut nonce = [0u8; 16];
+    rand::rng().fill_bytes(&mut nonce);
+    let diff = st.difficulty.load(Ordering::Relaxed);
+    let mac = hex::encode(create_mac(st.secret, timestamp, &nonce, diff).finalize().into_bytes());
+
+    let challenge = format!("{}.{}.{}.{}", timestamp, hex::encode(nonce), diff, mac);
+
+    let mut headers = HeaderMap::new();
+    headers.insert("x-challenge", challenge.parse().unwrap());
+    headers.insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+    headers
 }

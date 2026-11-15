@@ -1,6 +1,6 @@
-mod pow_gate;
+mod challenge;
 
-use crate::pow_gate::{PowState, pow_gate};
+use crate::challenge::{check_challenge, PowState, mint_challenge};
 use axum::{Router, middleware, routing::get, routing::post};
 use moka::sync::Cache;
 use rand::Rng;
@@ -31,16 +31,13 @@ async fn main() {
 
     // build our application with a single route
     let app = Router::new()
-        .route("/id/challenge/get", get(get_id_challenge))
-        .route("/post", post(post_json).route_layer(middleware::from_fn_with_state(state.clone(), pow_gate)));
+        .route("/id/challenge/get", get(mint_challenge))
+        .route("/post", post(post_json).route_layer(middleware::from_fn_with_state(state.clone(), check_challenge)))
+        .with_state(state);
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
-}
-
-async fn get_id_challenge() -> String {
-    String::from("Hello, World!")
 }
 
 async fn post_json() -> String {
