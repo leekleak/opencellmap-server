@@ -5,7 +5,7 @@ use axum::middleware::Next;
 use hmac::{Hmac, KeyInit, Mac};
 use moka::sync::Cache;
 use rand::Rng;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, atomic::AtomicU8};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -31,11 +31,11 @@ fn leading_zero_bits(hash: &[u8; 32]) -> u32 {
 }
 
 fn get_hash(nonce: &[u8; 16], timestamp: u64, counter: u64) -> [u8; 32] {
-    let mut hash = blake3::Hasher::new();
-    hash.update(nonce);
-    hash.update(&timestamp.to_be_bytes());
-    hash.update(&counter.to_be_bytes());
-    *hash.finalize().as_bytes()
+    let mut input = [0u8; 32];
+    input[..16].copy_from_slice(nonce);
+    input[16..24].copy_from_slice(&timestamp.to_be_bytes());
+    input[24..].copy_from_slice(&counter.to_be_bytes());
+    Sha256::digest(input).into()
 }
 
 fn create_mac(secret: [u8; 32], timestamp: u64, nonce: &[u8; 16], difficulty: u8) -> Hmac<Sha256> {
