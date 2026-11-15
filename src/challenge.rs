@@ -1,14 +1,14 @@
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, HeaderMap, Request, Response, StatusCode};
+use axum::http::{HeaderMap, Request, Response, StatusCode, header};
 use axum::middleware::Next;
 use hmac::{Hmac, KeyInit, Mac};
 use moka::sync::Cache;
+use rand::Rng;
 use sha2::Sha256;
 use std::sync::atomic::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::{Arc, atomic::AtomicU8};
-use rand::{rng, Rng};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct PowState {
     pub secret: [u8; 32],
